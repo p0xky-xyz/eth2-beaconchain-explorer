@@ -1177,7 +1177,7 @@ func ApiValidatorBalanceHistory(w http.ResponseWriter, r *http.Request) {
 		sendErrorResponse(w, r.URL.String(), "no or invalid validator indicies provided")
 	}
 
-	history, err := db.BigtableClient.GetValidatorBalanceHistory(queryIndices, latestEpoch, limit+1)
+	history, err := db.BigtableClient.GetValidatorBalanceHistory(queryIndices, latestEpoch, limit)
 	if err != nil {
 		sendErrorResponse(w, r.URL.String(), "could not retrieve db results")
 		return
@@ -1226,7 +1226,7 @@ func ApiValidatorBalanceHistory(w http.ResponseWriter, r *http.Request) {
 
 func getBalanceHistoryQueryParameters(q url.Values) (uint64, int64, error) {
 	onChainLatestEpoch := services.LatestEpoch()
-	defaultLimit := int64(100)
+	maxLimit := uint64(100)
 
 	latestEpoch := onChainLatestEpoch
 	if q.Has("latest_epoch") {
@@ -1245,16 +1245,22 @@ func getBalanceHistoryQueryParameters(q url.Values) (uint64, int64, error) {
 		latestEpoch -= offset
 	}
 
-	limit := defaultLimit
+	limit := maxLimit
 	if q.Has("limit") {
 		var err error
-		limit, err = strconv.ParseInt(q.Get("limit"), 10, 64)
-		if err != nil || limit > defaultLimit || limit < 1 {
+		limit, err = strconv.ParseUint(q.Get("limit"), 10, 64)
+		if err != nil || limit > maxLimit || limit < 1 {
 			return 0, 0, fmt.Errorf("invalid limit parameter")
 		}
 	}
 
-	return latestEpoch, limit, nil
+	// If the latestEpoch is 99, the function should return epochs 0 to 99, with a maximum limit of 100
+	// If the latestEpoch+1 is smaller than the maxLimit it sould only return the available records
+	if latestEpoch+1 < maxLimit {
+		limit = latestEpoch + 1
+	}
+
+	return latestEpoch, int64(limit), nil
 }
 
 // ApiValidatorPerformance godoc
